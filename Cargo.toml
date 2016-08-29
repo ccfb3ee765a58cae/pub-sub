@@ -1,0 +1,16 @@
+[package]
+name = "pub-sub"
+version = "0.1.0"
+publish = false
+
+authors = ["creato"]
+description = "A basic publish/subscribe channel."
+documentation = "https://creato.gitlab.io/pub-sub"
+repository = "https://gitlab.com/creato/pub-sub"
+
+[dependencies]
+uuid = { version = "^0", features = ["v4"] }
+log = "^0"
+
+[dev-dependencies]
+env_logger = "^0"
