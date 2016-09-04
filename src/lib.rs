@@ -209,7 +209,6 @@ mod tests {
             });
         }
 
-
         let mut accum = 0;
 
         for _ in 0..pulses {
