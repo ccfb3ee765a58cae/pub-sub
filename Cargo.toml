@@ -1,6 +1,6 @@
 [package]
 name = "pub-sub"
-version = "1.0.0"
+version = "2.0.0"
 
 exclude = [".docs-vc-link.js", ".gitlab-ci.yml"]
 
@@ -9,11 +9,7 @@ description = "A basic publish/subscribe channel."
 documentation = "https://creato.gitlab.io/pub-sub"
 repository = "https://gitlab.com/creato/pub-sub"
 readme = "README.md"
-license = "MIT"
+license = "MIT/LGPLv3"
 
 [dependencies]
 uuid = { version = "^0", features = ["v4"] }
-log = "^0"
-
-[dev-dependencies]
-env_logger = "^0"

@@ -25,7 +25,7 @@
 //! # Usage
 //!
 //! Add to crate dependencies:
-//! 
+//!
 //! ```toml
 //! [dependencies]
 //! pub-sub = "*"
@@ -41,59 +41,67 @@
 //! ```
 //! extern crate pub_sub;
 //! extern crate uuid;
-//! 
+//!
 //! use std::thread;
 //! use uuid::Uuid;
-//! 
+//!
 //! fn main() {
-//!     let (send, recv) = pub_sub::new();
-//!     // send: pub_sub::Sender<Uuid>
-//!     // recv: pub_sub::Receiver<Uuid>
-//! 
-//!     for _ in 0..16 {
-//!         let recv = recv.clone();
-//! 
-//!         thread::spawn(move || {
-//!             while let Ok(msg) = recv.recv() {
-//!                 println!("recevied {}", msg);
+//!    let channel = pub_sub::PubSub::new();
+//!
+//!    let mut handles = vec![];
+//!
+//!    for _ in 0..16 {
+//!        let recv = channel.subscribe();
+//!
+//!         handles.push(thread::spawn(move || {
+//!             for _ in 0..16 {
+//!                 println!("recevied {}", recv.recv().unwrap());
 //!             }
-//!         });
+//!         }));
 //!     }
-//! 
+//!
 //!     for _ in 0..16 {
-//!         let send = send.clone();
-//! 
-//!         thread::spawn(move || {
+//!         let channel = channel.clone();
+//!
+//!         handles.push(thread::spawn(move || {
 //!             let msg_id = Uuid::new_v4();
 //!             println!("    sent {}", msg_id);
-//!             send.send(msg_id);
-//!         });
+//!             channel.send(msg_id).unwrap();
+//!         }));
+//!     }
+//!
+//!     while let Some(handle) = handles.pop() {
+//!         handle.join().unwrap();
 //!     }
 //! }
 //! ```
 
-#[macro_use]
-extern crate log;
+
 extern crate uuid;
 
 use std::sync::{mpsc, Arc, Mutex};
 use std::collections::HashMap;
 
 
-/// Sending component of a pub/sub channel.
+/// Pub/sub channel.
 #[derive(Clone)]
-pub struct Sender<T: Clone> {
+pub struct PubSub<T: Clone> {
     senders: Arc<Mutex<HashMap<uuid::Uuid, mpsc::Sender<T>>>>,
 }
 
-/// Receiver component of a pub/sub channel.
-pub struct Receiver<T: Clone> {
+/// Subscription to a pub/sub channel
+pub struct Subscription<T: Clone> {
     receiver: mpsc::Receiver<T>,
     senders: Arc<Mutex<HashMap<uuid::Uuid, mpsc::Sender<T>>>>,
     id: uuid::Uuid,
 }
 
-impl<T: Clone> Sender<T> {
+impl<T: Clone> PubSub<T> {
+    /// Create a pub/sub channel
+    pub fn new() -> PubSub<T> {
+        PubSub { senders: Arc::new(Mutex::new(HashMap::new())) }
+    }
+
     /// Attempts to broadcast
     pub fn send(&self, it: T) -> Result<(), mpsc::SendError<T>> {
         let senders = self.senders.lock().unwrap();
@@ -107,9 +115,26 @@ impl<T: Clone> Sender<T> {
 
         Ok(())
     }
+
+    /// Create a new subscription to the channel.
+    pub fn subscribe(&self) -> Subscription<T> {
+        let id = uuid::Uuid::new_v4();
+        let (send, recv) = mpsc::channel();
+
+        {
+            let mut senders = self.senders.lock().unwrap();
+            senders.insert(id, send);
+        }
+
+        Subscription {
+            receiver: recv,
+            senders: self.senders.clone(),
+            id: id,
+        }
+    }
 }
 
-impl<T: Clone> Receiver<T> {
+impl<T: Clone> Subscription<T> {
     /// Receives a single message. Blocks until a message is available.
     pub fn recv(&self) -> Result<T, mpsc::RecvError> {
         self.receiver.recv()
@@ -126,27 +151,7 @@ impl<T: Clone> Receiver<T> {
     }
 }
 
-
-impl<T: Clone> Clone for Receiver<T> {
-    /// Create a new receiver associated with the sender.
-    fn clone(&self) -> Self {
-        let id = uuid::Uuid::new_v4();
-        let (send, recv) = mpsc::channel();
-
-        {
-            let mut senders = self.senders.lock().unwrap();
-            senders.insert(id, send);
-        }
-
-        Receiver {
-            receiver: recv,
-            senders: self.senders.clone(),
-            id: id,
-        }
-    }
-}
-
-impl<T: Clone> Drop for Receiver<T> {
+impl<T: Clone> Drop for Subscription<T> {
     /// Remove our sender ID from the sender list.
     fn drop(&mut self) {
         let mut senders = self.senders.lock().unwrap();
@@ -154,27 +159,12 @@ impl<T: Clone> Drop for Receiver<T> {
     }
 }
 
-/// Create a pub/sub channel
-pub fn new<T: Clone>() -> (Sender<T>, Receiver<T>) {
-    let mut senders = HashMap::new();
-
-    let initial_id = uuid::Uuid::new_v4();
-    let (send, recv) = mpsc::channel();
-
-    senders.insert(initial_id, send);
-
-    let senders = Arc::new(Mutex::new(senders));
-
-    (Sender { senders: senders.clone() },
-     Receiver {
-        senders: senders.clone(),
-        id: initial_id,
-        receiver: recv,
-    })
+impl<T: Clone> Clone for Subscription<T> {
+    fn clone(&self) -> Self {
+        PubSub { senders: self.senders.clone() }.subscribe()
+    }
 }
 
-#[cfg(test)]
-extern crate env_logger;
 
 #[cfg(test)]
 mod tests {
@@ -182,17 +172,12 @@ mod tests {
 
     use super::*;
 
-    fn pre() {
-        use env_logger;
-        env_logger::init().unwrap();
-    }
-
     #[test]
     fn many_senders() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        pre();
 
-        let (send, recv) = new();
+        let send = PubSub::new();
+        let recv = send.subscribe();
 
         let threads = 5;
         let pulses = 50;
@@ -213,7 +198,6 @@ mod tests {
 
         for _ in 0..pulses {
             accum += 1;
-            debug!("pulse {}", accum);
             send.send(accum).unwrap();
         }
 
