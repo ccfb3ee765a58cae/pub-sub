@@ -9,7 +9,7 @@ description = "A basic publish/subscribe channel."
 documentation = "https://creato.gitlab.io/pub-sub"
 repository = "https://gitlab.com/creato/pub-sub"
 readme = "README.md"
-license = "MIT/LGPLv3"
+license = "MIT/LGPL-3.0"
 
 [dependencies]
 uuid = { version = "^0", features = ["v4"] }
